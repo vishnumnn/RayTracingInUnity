@@ -1,0 +1,193 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+float4x4 Global;
+float4x4 InverseProjection;
+RWTexture2D<float4> Result;
+float2 PixelOffset;
+Texture2D<float4> SkyBox;
+SamplerState samplerSkyBox;
+float4 lightVec;
+float randHelp;
+static const float PI = 3.14159265f;
+static const float GR = (1 + sqrt(5)) * 0.5f;
+
+struct Ray {
+	float3 origin;
+	float3 dir;
+};
+
+struct plane {
+	float3 normal;
+	float anchor;
+	float4 color;
+};
+
+struct Sphere {
+	float3 center;
+	float radius;
+	float4 color;
+};
+
+struct Intersect {
+	float3 intersectionPos;
+	float3 normal;
+	float distance;
+	float4 color;
+};
+
+// Struct dependent class variables. 
+StructuredBuffer<Sphere> Spheres;
+
+// Getter functions for structs.
+Ray GetRay(float3 origin, float3 dir) {
+	Ray ray;
+	ray.origin = origin;
+	ray.dir = dir;
+	return ray;
+}
+
+plane GetPlane(float anchor, float3 normal, float3 col) {
+	plane Plane;
+	Plane.normal = normal;
+	Plane.anchor = anchor;
+	Plane.color = float4(col, 1.0f);
+	return Plane;
+}
+
+Sphere GetSphere(float3 center, float radius, float3 col) {
+	Sphere s;
+	s.center = center;
+	s.radius = radius;
+	s.color = float4(col, 1.0f);
+	return s;
+}
+
+Intersect GetIntersect(float3 pos, float3 nor, float dist, float3 col) {
+	Intersect hit;
+	hit.intersectionPos = pos;
+	hit.normal = nor;
+	hit.distance = dist;
+	hit.color = float4(col, 1.0f);
+	return hit;
+}
+
+// Functions with Ray tracing logic.
+void GetIntersection(Sphere s, Ray r, inout Intersect intx) {
+	float3 vecCO = r.origin - s.center;
+	float a = dot(r.dir, r.dir);
+	float b = 2 * dot(vecCO, r.dir);
+	float c = dot(vecCO, vecCO) - pow(s.radius, 2);
+
+	float det = pow(b, 2) - 4 * a * c;
+	if (det < 0.0f) {
+		return;
+	}
+	float solution1 = (b * -1.0f + sqrt(det)) / 2 * a;
+	float solution2 = (b * -1.0f - sqrt(det)) / 2 * a;
+	float t = (solution1 < solution2 ? solution1 : solution2);
+	if (t > 0.0f && t < intx.distance) {
+		intx.distance = t;
+		intx.intersectionPos = r.origin + t * r.dir;
+		intx.normal = normalize(intx.intersectionPos - s.center);
+		intx.color = s.color;
+	}
+	return;
+}
+
+void GetPlaneIntersection(plane Pl, Ray r, inout Intersect intx) {
+	float oriDot = dot(Pl.normal, r.origin);
+	float dirDot = dot(Pl.normal, r.dir);
+	if (dirDot == 0.0f) {
+		return;
+	}
+	float t = (Pl.anchor - oriDot) / dirDot;
+	if (t > 0.0f && t < intx.distance) {
+		intx.distance = t;
+		intx.intersectionPos = r.origin + t * r.dir;
+		intx.normal = normalize(Pl.normal);
+		intx.color = Pl.color;
+	}
+	return;
+}
+
+Ray CreateCameraRay(float2 uv) {
+	float3 origin = mul(Global, float4(0.0f, 0.0f, 0.0f, 1.0f)).xyz;
+
+	float3 direction = mul(InverseProjection, float4(uv, 0.0f, 1.0f)).xyz;
+
+	direction = normalize(mul(Global, float4(direction, 0.0f)).xyz);
+	return GetRay(origin, direction);
+}
+
+void InstantiateObjectsAndRun(inout Intersect hit, Ray ray) {
+	plane p = GetPlane(float(0.0f), float3(0.0f, 1.0f, 0.0f), float3(1.0f, 1.0f, 1.0f));
+	GetPlaneIntersection(p, ray, hit);
+	uint size;
+	uint buffer;
+	Spheres.GetDimensions(size, buffer);
+	for (uint i = 0; i < size; i++) {
+		GetIntersection(Spheres[i], ray, hit);
+	}
+}
+
+float4x4 TransformToBounceCoordinates(float3 normal) {
+	float3 normalY;
+	if (normal.x > normal.y) {
+		normalY = float3(normal.z, 0, -normal.x) / length(float3(normal.z, 0, -normal.x));
+	}
+	else {
+		normalY = float3(0, -normal.z, normal.y) / length(float3(0, -normal.z, normal.y));
+	}
+	float3 normalZ = cross(normal, normalY);
+	float3x3 transformation = float3x3(float3(normal.x, normalY.x, normalZ.x), float3(normal.y, normalY.y, normalZ.y),
+		float3(normal.z, normalY.z, normalZ.z));
+}
+
+float3 GetRefrac(float3x3 transform, uint t, uint max) {
+	float theta = t * 2 * PI * GR;
+	float phi = acos(1.0f - 2.0f * (t / (float)max));
+
+	float3 refrac = float3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));
+	float3 transRefrac = mul(transform, refrac);
+	return transRefrac;
+}
+void GrabShade(inout Intersect Hit, Ray r) {
+	if (Hit.distance == 1.#INF) {
+		float theta = -acos(r.dir.y) / PI;
+		float phi = atan2(r.dir.z, r.dir.x) / PI;
+		Hit.color = SkyBox.SampleLevel(samplerSkyBox, float2(phi, theta), 0);
+		return;
+	}
+	Intersect norHit = GetIntersect(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f), 1.#INF, float3(0.0f, 0.0f, 0.0f));
+	Ray norRay = GetRay(Hit.intersectionPos + Hit.normal * 0.001f, lightVec.xyz * -1);
+	InstantiateObjectsAndRun(norHit, norRay);
+	if (norHit.distance == 1.#INF) {
+		float mult;
+		float dotProd = dot(Hit.normal.xyz, lightVec.xyz);
+		mult = saturate((-1.0f * dotProd)) * lightVec.w;
+		Hit.color = float4((mult * Hit.color.xyz), 1.0f);
+		return;
+	}
+	else {
+		Hit.color = float4(0.0f, 0.0f, 0.0f, 1.0f);
+	}
+}
+[numthreads(8, 8, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	uint width, height;
+	Result.GetDimensions(width, height);
+	float2 uv = float2(id.xy + PixelOffset) / float2(width, height) * 2.0f - 1.0f;
+	Ray ray = CreateCameraRay(uv);
+
+	Intersect hit = GetIntersect(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f), 1.#INF, float3(0.0f, 0.0f, 0.0f));
+	float3 lightVec = float3(0.0f, -1.0f, 0.0f);
+
+	InstantiateObjectsAndRun(hit, ray);
+	GrabShade(hit, ray);
+
+	Result[id.xy] = hit.color;
+}
