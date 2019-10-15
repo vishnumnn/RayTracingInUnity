@@ -190,9 +190,9 @@ void GrabShade(inout Intersect Hit, Ray r) {
 				reflectHit.color = float4(0.0f, 0.0f, 0.0f, 1.0f);
 			}
 		}
+
 		Hit.color = Hit.color + reflectHit.color * Hit.specular;
 	}
-
 
 	Intersect norHit = GetIntersect(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f), 1.#INF, float3(0.0f, 0.0f, 0.0f));
 	norHit.specular = float4(0.0f, 0.0f, 0.0f, 1.0f);
