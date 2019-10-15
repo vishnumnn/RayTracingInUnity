@@ -308,7 +308,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   RayTracerShader: {fileID: 7200000, guid: 0a872aef18447794aa9f86feca8e9d3a, type: 3}
-  SkyBox: {fileID: 2800000, guid: b3d926744e5c07c489399549db960982, type: 3}
+  SkyBox: {fileID: 2800000, guid: 7593412e66480484eb0f4f9e4241539f, type: 3}
   Light: {fileID: 705507994}
   numSpheres: 15
   sphereRadiusMin: 1.19
