@@ -29,6 +29,7 @@ struct Sphere {
 	float3 center;
 	float radius;
 	float4 color;
+	float4 specular;
 };
 
 struct Intersect {
@@ -36,6 +37,7 @@ struct Intersect {
 	float3 normal;
 	float distance;
 	float4 color;
+	float4 specular;
 };
 
 // Struct dependent class variables. 
@@ -93,6 +95,7 @@ void GetIntersection(Sphere s, Ray r, inout Intersect intx) {
 		intx.intersectionPos = r.origin + t * r.dir;
 		intx.normal = normalize(intx.intersectionPos - s.center);
 		intx.color = s.color;
+		intx.specular = s.specular;
 	}
 	return;
 }
@@ -154,6 +157,7 @@ float3 GetRefrac(float3x3 transform, uint t, uint max) {
 	float3 transRefrac = mul(transform, refrac);
 	return transRefrac;
 }
+
 void GrabShade(inout Intersect Hit, Ray r) {
 	if (Hit.distance == 1.#INF) {
 		float theta = -acos(r.dir.y) / PI;
@@ -161,7 +165,37 @@ void GrabShade(inout Intersect Hit, Ray r) {
 		Hit.color = SkyBox.SampleLevel(samplerSkyBox, float2(phi, theta), 0);
 		return;
 	}
+	if (any(Hit.specular - float4(0.0f, 0.0f, 0.0f, 1.0f))) {
+		Intersect reflectHit = GetIntersect(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f), 1.#INF, float3(0.0f, 0.0f, 0.0f));
+		reflectHit.specular = float4(0.0f, 0.0f, 0.0f, 1.0f);
+		Ray reflectRay = GetRay(Hit.intersectionPos + Hit.normal * 0.001f, reflect(r.dir, Hit.normal));
+		InstantiateObjectsAndRun(reflectHit, reflectRay);
+		if (reflectHit.distance == 1.#INF) {
+			float theta = -acos(reflectRay.dir.y) / PI;
+			float phi = atan2(reflectRay.dir.z, reflectRay.dir.x) / PI;
+			reflectHit.color = 1.5* SkyBox.SampleLevel(samplerSkyBox, float2(phi, theta), 0);
+		}
+		else {
+			Intersect norHit = GetIntersect(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f), 1.#INF, float3(0.0f, 0.0f, 0.0f));
+			norHit.specular = float4(0.0f, 0.0f, 0.0f, 1.0f);
+			Ray norRay = GetRay(reflectHit.intersectionPos + reflectHit.normal * 0.001f, lightVec.xyz * -1);
+			InstantiateObjectsAndRun(norHit, norRay);
+			if (norHit.distance == 1.#INF) {
+				float mult;
+				float dotProd = dot(reflectHit.normal.xyz, lightVec.xyz);
+				mult = saturate((-1.0f * dotProd)) * lightVec.w;
+				reflectHit.color = float4((mult * reflectHit.color.xyz), 1.0f);
+			}
+			else {
+				reflectHit.color = float4(0.0f, 0.0f, 0.0f, 1.0f);
+			}
+		}
+		Hit.color = Hit.color + reflectHit.color * Hit.specular;
+	}
+
+
 	Intersect norHit = GetIntersect(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f), 1.#INF, float3(0.0f, 0.0f, 0.0f));
+	norHit.specular = float4(0.0f, 0.0f, 0.0f, 1.0f);
 	Ray norRay = GetRay(Hit.intersectionPos + Hit.normal * 0.001f, lightVec.xyz * -1);
 	InstantiateObjectsAndRun(norHit, norRay);
 	if (norHit.distance == 1.#INF) {
@@ -184,6 +218,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	Ray ray = CreateCameraRay(uv);
 
 	Intersect hit = GetIntersect(float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f), 1.#INF, float3(0.0f, 0.0f, 0.0f));
+	hit.specular = float4(0.0f, 0.0f, 0.0f, 1.0f);
 	float3 lightVec = float3(0.0f, -1.0f, 0.0f);
 
 	InstantiateObjectsAndRun(hit, ray);

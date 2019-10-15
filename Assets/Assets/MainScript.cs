@@ -35,6 +35,7 @@ public class MainScript : MonoBehaviour
         public Vector3 origin;
         public float radius;
         public Vector4 color;
+        public Vector4 specular;
     }
     private bool isValid(Sphere s, Vector4 vec)
     {
@@ -60,6 +61,7 @@ public class MainScript : MonoBehaviour
             sphere.radius = Random.Range(sphereRadiusMin, sphereRadiusMax);
             sphere.origin = new Vector3(-1.0f, -1.0f, -1.0f);
             sphere.color = new Vector4(Random.Range(0.0f, 1.0f), Random.Range(0.0f, 1.0f), Random.Range(0.0f, 1.0f), 1.0f);
+            sphere.specular = Random.Range(0.0f,1.0f) > 0.5f ? new Vector4(0.0f,0.0f,0.0f,1.0f) : new Vector4(0.6f, 0.6f, 0.6f, 1.0f);
             while (numTries < NUM_RETRIES)
             {
                 float maxx = X_RANGE + sphereRadiusMax;
@@ -88,7 +90,7 @@ public class MainScript : MonoBehaviour
             }
         }
         Debug.Log(occupiedRegions);
-        this.spheres = new ComputeBuffer(spheres.Count, 32);
+        this.spheres = new ComputeBuffer(spheres.Count, 48);
         this.spheres.SetData(spheres);
     }
 
